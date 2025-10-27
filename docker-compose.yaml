@@ -1,0 +1,20 @@
+name: gridwalk
+
+volumes:
+  database:
+  temp_data:
+
+services:
+  database:
+    image: postgis/postgis:16-3.4
+    container_name: gridwalk-database
+    platform: linux/amd64
+    volumes:
+      - database:/var/lib/postgresql/data
+      - temp_data:/tmp
+    environment:
+      POSTGRES_DB: gridwalk
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
