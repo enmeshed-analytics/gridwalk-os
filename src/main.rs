@@ -4,7 +4,7 @@ mod layer;
 use anyhow::Result;
 use axum::{
     Router,
-    routing::{patch, post},
+    routing::{get, patch, post},
 };
 use tracing::info;
 
@@ -32,6 +32,7 @@ async fn main() -> Result<()> {
     let router = Router::new()
         .route("/layers", post(layer::post_tus))
         .route("/layers/:layer_id", patch(layer::patch_tus))
+        .route("/layers/:layer_id/tiles/:z/:x/:y", get(layer::get_tile))
         .with_state(std::sync::Arc::new(app_state));
 
     // Start the Axum server
