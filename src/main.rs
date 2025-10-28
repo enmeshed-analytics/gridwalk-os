@@ -6,6 +6,7 @@ use axum::{
     Router,
     routing::{get, patch, post},
 };
+use tower_http::cors::CorsLayer;
 use tracing::info;
 
 #[tokio::main]
@@ -32,8 +33,10 @@ async fn main() -> Result<()> {
     let router = Router::new()
         .route("/layers", post(layer::post_tus))
         .route("/layers/:layer_id", patch(layer::patch_tus))
+        .route("/layers", get(layer::get_layers))
         .route("/layers/:layer_id/tiles/:z/:x/:y", get(layer::get_tile))
-        .with_state(std::sync::Arc::new(app_state));
+        .with_state(std::sync::Arc::new(app_state))
+        .layer(CorsLayer::permissive()); // Allow CORS for UI requests
 
     // Start the Axum server
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3001").await?;
