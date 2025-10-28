@@ -100,8 +100,35 @@ pub async fn post_tus(
             if let Ok(decoded_value) = BASE64_STANDARD.decode(parts[1]) {
                 if let Ok(value) = String::from_utf8(decoded_value) {
                     match key {
-                        "name" => name = Some(value),
-                        "upload_type" => upload_type = Some(value),
+                        "name" => {
+                            let trimmed_name = value.trim().to_string();
+                            if trimmed_name
+                                .chars()
+                                .all(|c| c.is_alphanumeric() || c == ' ' || c == '_' || c == '-')
+                            {
+                                name = Some(trimmed_name);
+                            } else {
+                                return Err((
+                                    StatusCode::BAD_REQUEST,
+                                    axum::Json(
+                                        json!({"error": "Name can only contain alphanumeric characters, spaces, hyphens, and underscores"}),
+                                    ),
+                                ));
+                            }
+                        }
+                        "upload_type" => {
+                            let trimmed_type = value.trim().to_string();
+                            if trimmed_type.chars().all(|c| c.is_alphabetic()) {
+                                upload_type = Some(trimmed_type);
+                            } else {
+                                return Err((
+                                    StatusCode::BAD_REQUEST,
+                                    axum::Json(
+                                        json!({"error": "Upload type can only contain letters"}),
+                                    ),
+                                ));
+                            }
+                        }
                         _ => {}
                     }
                 }
