@@ -5,6 +5,7 @@ use reqwest;
 use serde_json::json;
 use std::env;
 use std::sync::Arc;
+use tracing::error;
 
 #[derive(serde::Deserialize)]
 pub struct OSCredentials {
@@ -53,15 +54,20 @@ pub async fn get_os_token(
         )
     })?;
 
-    let (os_api_key, os_api_secret) =
-        super::store::get_os_credentials(&*state.app_db, &encryption_key)
-            .await
-            .map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    axum::Json(json!({"error": format!("Failed to get OS credentials: {}", e)})),
-                )
-            })?;
+    let (os_api_key, os_api_secret) = super::store::get_os_credentials(
+        &*state.app_db,
+        &encryption_key,
+    )
+    .await
+    .map_err(|e| {
+        error!("Error retrieving OS credentials: {}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            axum::Json(
+                json!({"error": format!("Failed to get OS credentials: OS not configured")}),
+            ),
+        )
+    })?;
 
     // Create Basic Auth header
     let credentials = format!("{}:{}", os_api_key, os_api_secret);
