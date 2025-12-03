@@ -6,36 +6,95 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { Sidebar } from './sidebar';
 import { useLayerStore } from '@/stores';
 
+interface TokenResponse {
+  access_token: string;
+  expires_in: string;
+  issued_at: string;
+  token_type: string;
+}
+
 export default function Home() {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const selectedLayers = useLayerStore(state => state.selectedLayers);
   const [mapLoaded, setMapLoaded] = useState(false);
-  
-  const OS_API_KEY = process.env.NEXT_PUBLIC_OS_API_KEY;
+
+  // Token management refs
+  const tokenRef = useRef<string | null>(null);
+  const tokenExpiryRef = useRef<number>(0);
+  const refreshPromiseRef = useRef<Promise<string> | null>(null);
+
+  // Function to fetch a new token
+  const fetchToken = async (): Promise<string> => {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/service/os/token`, {
+      method: 'GET',
+    });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch token: ${response.statusText}`);
+      }
+
+      const data: TokenResponse = await response.json();
+
+      // Store token and expiry time
+      tokenRef.current = data.access_token;
+      tokenExpiryRef.current = Date.now() + (parseInt(data.expires_in) * 1000);
+
+      return data.access_token;
+    };
+
+  // Function to get a valid token, refreshing if necessary
+  const getToken = async (): Promise<string> => {
+    if (tokenRef.current && Date.now() < tokenExpiryRef.current - 10) {
+      return tokenRef.current;
+    }
+    if (!refreshPromiseRef.current) {
+      refreshPromiseRef.current = fetchToken().finally(() => {
+        refreshPromiseRef.current = null;
+      });
+    }
+    return refreshPromiseRef.current;
+  };
+
 
   useEffect(() => {
     if (map.current) return; // initialize map only once
     
-    if (mapContainer.current) {
-      map.current = new maplibregl.Map({
-        container: mapContainer.current,
-        style: `https://api.os.uk/maps/vector/v1/vts/resources/styles?srs=3857&key=${OS_API_KEY}`,
-        center: [-0.0754, 51.5055], // London coordinates [lng, lat] - Tower Bridge
-        zoom: 10,
-        maxBounds: [
-          [ -10.76418, 49.528423 ],
-          [ 1.9134116, 61.331151 ]
-        ],
-        navigationControl: true,
-        projection: 'mercator' // Explicitly use EPSG:3857 Web Mercator
-      });
-
-        // Set up map load event handler
-        map.current.on('load', () => {
-          setMapLoaded(true);
+    const initializeMap = async () => {
+      if (mapContainer.current) {
+        const token = await getToken();
+        map.current = new maplibregl.Map({
+          container: mapContainer.current,
+          style: 'https://api.os.uk/maps/vector/v1/vts/resources/styles?srs=3857',
+          center: [-0.0754, 51.5055], // London coordinates [lng, lat] - Tower Bridge
+          zoom: 10,
+          maxBounds: [
+            [ -10.76418, 49.528423 ],
+            [ 1.9134116, 61.331151 ]
+          ],
+          navigationControl: true,
+          projection: 'mercator', // Explicitly use EPSG:3857 Web Mercator
+          transformRequest: (url, resourceType) => {
+            if (url.includes('api.os.uk')) {
+              return {
+                url: url,
+                headers: {
+                  'Authorization': `Bearer ${token}`
+                }
+              };
+            }
+            return { url };
+          }
         });
-    }
+
+          // Set up map load event handler
+          map.current.on('load', () => {
+            setMapLoaded(true);
+          });
+      }
+    };
+
+    initializeMap();
 
     return () => {
       if (map.current) {
