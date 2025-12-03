@@ -1,3 +1,4 @@
+mod basemap;
 mod config;
 mod layer;
 
@@ -31,6 +32,8 @@ async fn main() -> Result<()> {
     }
 
     let router = Router::new()
+        .route("/service/os/credentials", post(basemap::set_os_credentials))
+        .route("/service/os/token", get(basemap::get_os_token))
         .route("/layers", post(layer::post_tus))
         .route("/layers/:layer_id", patch(layer::patch_tus))
         .route("/layers", get(layer::get_layers))

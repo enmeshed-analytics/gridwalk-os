@@ -21,3 +21,11 @@ CREATE TABLE gridwalk.layers (
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE gridwalk.external_services (
+    id UUID PRIMARY KEY,
+    service_name VARCHAR(100) NOT NULL UNIQUE,
+    credentials JSONB NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
