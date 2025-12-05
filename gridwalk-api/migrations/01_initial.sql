@@ -15,6 +15,16 @@ CREATE TABLE gridwalk.layers (
     id UUID PRIMARY KEY,
     status VARCHAR(50) NOT NULL,
     name VARCHAR(255) NOT NULL,
+    metadata JSONB,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Layer uploads table
+CREATE TABLE gridwalk.layer_uploads (
+    id UUID PRIMARY KEY,
+    status VARCHAR(50) NOT NULL,
+    name VARCHAR(255) NOT NULL,
     upload_type VARCHAR(100),
     total_size BIGINT NOT NULL DEFAULT 0,
     current_offset BIGINT NOT NULL DEFAULT 0,
@@ -22,6 +32,7 @@ CREATE TABLE gridwalk.layers (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
+-- External services table
 CREATE TABLE gridwalk.external_services (
     id UUID PRIMARY KEY,
     service_name VARCHAR(100) NOT NULL UNIQUE,

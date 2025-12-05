@@ -1,5 +1,7 @@
-mod core;
 mod endpoints;
+mod layer;
+mod layer_uploads;
 
-use core::*;
 pub use endpoints::*;
+use layer::*;
+use layer_uploads::*;

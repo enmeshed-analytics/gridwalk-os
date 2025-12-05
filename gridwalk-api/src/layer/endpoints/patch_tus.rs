@@ -1,5 +1,5 @@
 use crate::config::AppState;
-use crate::layer::{Layer, LayerStatus};
+use crate::layer::{Layer, LayerStatus, LayerUpload, LayerUploadStatus};
 use axum::{
     body::Bytes,
     extract::{Path as RequestPath, State},
@@ -71,16 +71,18 @@ pub async fn patch_tus(
             )
         })?;
 
-    // Get the layer from database
-    let mut layer = Layer::get(layer_id, &*state.app_db).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            axum::Json(json!({"error": format!("Database error: {}", e)})),
-        )
-    })?;
+    // Get the layer upload record from database
+    let mut layer_upload = LayerUpload::get(&*state.app_db, layer_id)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(json!({"error": format!("Database error: {}", e)})),
+            )
+        })?;
 
     // Validate that the layer is in uploading state
-    if layer.status != LayerStatus::Uploading {
+    if layer_upload.status != LayerUploadStatus::Uploading {
         return Err((
             StatusCode::CONFLICT,
             axum::Json(json!({"error": "Layer is not in uploading state"})),
@@ -88,19 +90,19 @@ pub async fn patch_tus(
     }
 
     // Validate upload offset matches current offset
-    if upload_offset != layer.current_offset {
+    if upload_offset != layer_upload.current_offset {
         return Err((
             StatusCode::CONFLICT,
             axum::Json(json!({
                 "error": "Upload-Offset does not match current offset",
-                "expected": layer.current_offset,
+                "expected": layer_upload.current_offset,
                 "received": upload_offset
             })),
         ));
     }
 
     // Validate that we don't exceed the total size (if known)
-    if let Some(total_size) = layer.total_size {
+    if let Some(total_size) = layer_upload.total_size {
         if upload_offset + body.len() as i64 > total_size {
             return Err((
                 StatusCode::PAYLOAD_TOO_LARGE,
@@ -110,7 +112,7 @@ pub async fn patch_tus(
     }
 
     // Open the upload file and append data
-    let upload_file_path = state.temp_data_path.join(layer.id.to_string());
+    let upload_file_path = state.temp_data_path.join(layer_upload.id.to_string());
     let mut file = fs::OpenOptions::new()
         .append(true)
         .open(&upload_file_path)
@@ -138,13 +140,13 @@ pub async fn patch_tus(
     })?;
 
     // Update layer's current offset and updated_at timestamp
-    layer.current_offset += body.len() as i64;
-    layer.updated_at = chrono::Utc::now();
+    layer_upload.current_offset += body.len() as i64;
+    layer_upload.updated_at = chrono::Utc::now();
 
     // Check if upload is complete and process the file
-    if let Some(total_size) = layer.total_size {
-        if layer.current_offset >= total_size {
-            layer.status = LayerStatus::Ready;
+    if let Some(total_size) = layer_upload.total_size {
+        if layer_upload.current_offset >= total_size {
+            layer_upload.status = LayerUploadStatus::Uploaded;
 
             // TODO: Move to background worker
             // GDAL processing and database insertion only for complete uploads
@@ -186,7 +188,7 @@ pub async fn patch_tus(
                 )
             })?;
 
-            println!("Upload complete for layer {}", layer.id);
+            println!("Upload complete for layer {}", layer_upload.id);
 
             // Get PostGIS connector reference
             let postgis_connector = vector_connector
@@ -324,8 +326,56 @@ pub async fn patch_tus(
             );
         }
     }
+
+    if layer_upload.status == LayerUploadStatus::Uploaded {
+        // Convert LayerUpload to Layer
+        let layer = Layer {
+            id: layer_upload.id,
+            status: LayerStatus::Available,
+            name: layer_upload.name.clone(),
+            created_at: layer_upload.created_at,
+            updated_at: layer_upload.updated_at,
+        };
+
+        // Create a transaction to delete the LayerUpload record and save the Layer record
+        let mut tx = state.app_db.begin().await.map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(json!({"error": format!("Failed to start transaction: {}", e)})),
+            )
+        })?;
+
+        // Delete LayerUpload record
+        layer_upload.delete(&mut *tx).await.map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(
+                    json!({"error": format!("Failed to delete layer upload record: {}", e)}),
+                ),
+            )
+        })?;
+
+        // Save Layer record
+        layer.save(&mut *tx).await.map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(json!({"error": format!("Failed to save layer record: {}", e)})),
+            )
+        })?;
+
+        // Commit the transaction
+        tx.commit().await.map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(json!({"error": format!("Failed to commit transaction: {}", e  )})),
+            )
+        })?;
+        return Ok((StatusCode::NO_CONTENT, HeaderMap::new()));
+    }
+
+    // If not complete, update the LayerUpload record
     // Always update layer status in the app database (to persist offset changes)
-    layer.save(&*state.app_db).await.map_err(|e| {
+    layer_upload.save(&*state.app_db).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             axum::Json(json!({"error": format!("Failed to update layer: {}", e)})),
@@ -337,7 +387,7 @@ pub async fn patch_tus(
     response_headers.insert("tus-resumable", HeaderValue::from_static("1.0.0"));
     response_headers.insert(
         "upload-offset",
-        HeaderValue::from_str(&layer.current_offset.to_string()).map_err(|_| {
+        HeaderValue::from_str(&layer_upload.current_offset.to_string()).map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 axum::Json(json!({"error": "Failed to create upload-offset header"})),

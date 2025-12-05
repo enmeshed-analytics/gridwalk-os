@@ -1,5 +1,5 @@
 use crate::config::AppState;
-use crate::layer::{Layer, LayerStatus};
+use crate::layer::{LayerUpload, LayerUploadStatus};
 use axum::{
     extract::State,
     http::{
@@ -9,7 +9,6 @@ use axum::{
     response::IntoResponse,
 };
 use base64::prelude::*;
-use gridwalk_core::LayerCore;
 use serde_json::json;
 use std::sync::Arc;
 use tokio::fs;
@@ -150,9 +149,9 @@ pub async fn post_tus(
         )
     })?;
 
-    let layer = Layer {
+    let layer_upload = LayerUpload {
         id: Uuid::new_v4(),
-        status: LayerStatus::Uploading,
+        status: LayerUploadStatus::Uploading,
         name,
         upload_type: Some(upload_type),
         total_size,
@@ -162,7 +161,7 @@ pub async fn post_tus(
     };
 
     // Create empty file for TUS upload
-    let upload_file_path = state.temp_data_path.join(layer.id.to_string());
+    let upload_file_path = state.temp_data_path.join(layer_upload.id.to_string());
     println!("Creating upload file at {:?}", upload_file_path);
     fs::File::create(&upload_file_path).await.map_err(|e| {
         (
@@ -171,7 +170,7 @@ pub async fn post_tus(
         )
     })?;
 
-    layer.save(&*state.app_db).await.map_err(|e| {
+    layer_upload.save(&*state.app_db).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             axum::Json(json!({"error": format!("Failed to save layer: {}", e)})),
@@ -182,7 +181,7 @@ pub async fn post_tus(
     response_headers.insert("tus-resumable", HeaderValue::from_static("1.0.0"));
     response_headers.insert(
         LOCATION,
-        HeaderValue::from_str(&format!("/layers/{}", layer.id)).map_err(|_| {
+        HeaderValue::from_str(&format!("/layers/{}", layer_upload.id)).map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 axum::Json(json!({"error": "Failed to create location header"})),

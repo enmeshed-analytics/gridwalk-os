@@ -133,12 +133,12 @@ export function Sidebar() {
           
           {layers && layers.length > 0 && (
           <div className="space-y-6">
-              {/* Ready Layers */}
-              {layers.filter(layer => layer.status === 'ready').length > 0 && (
+              {/* Available Layers */}
+              {layers.filter(layer => layer.status === 'available').length > 0 && (
                 <div>
                   <h3 className="text-sm font-medium text-gray-700 mb-2">Layers</h3>
                   <ul className="space-y-2">
-                    {layers.filter(layer => layer.status === 'ready').map((layer) => (
+                    {layers.filter(layer => layer.status === 'available').map((layer) => (
                       <li 
                         key={layer.id} 
                         className={`p-3 rounded-md border cursor-pointer transition-colors ${
