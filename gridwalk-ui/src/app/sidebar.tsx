@@ -84,7 +84,7 @@ export function Sidebar() {
 
     // Create TUS upload
     const upload = new tus.Upload(selectedFile, {
-      endpoint: `${process.env.NEXT_PUBLIC_API_BASE_URL}/layers`,
+      endpoint: `${process.env.NEXT_PUBLIC_API_BASE_URL}/layers/upload`,
       metadata: {
         name: layerName.trim(),
         upload_type: 'geojson',
@@ -93,11 +93,15 @@ export function Sidebar() {
         console.error('Upload failed:', error);
       },
       onSuccess: () => {
-        console.log('Upload completed successfully');
+        // Clear tus localStorage entries for this specific upload
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('tus::') && key.includes(selectedFile.name)) {
+            localStorage.removeItem(key);
+          }
+        });
       },
       onProgress: (bytesUploaded, bytesTotal) => {
         const percentage = Math.round((bytesUploaded / bytesTotal) * 100);
-        console.log(`Upload progress: ${percentage}%`);
       },
     });
 

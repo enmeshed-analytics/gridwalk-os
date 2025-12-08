@@ -23,6 +23,34 @@ export default function Home() {
   const tokenRef = useRef<string | null>(null);
   const tokenExpiryRef = useRef<number>(0);
   const refreshPromiseRef = useRef<Promise<string> | null>(null);
+  const tokenRefreshTimerRef = useRef<number | null>(null);
+
+  // Function to schedule token refresh
+  const scheduleTokenRefresh = (expiresInMs: number) => {
+    // Clear existing timer
+    if (tokenRefreshTimerRef.current) {
+      console.log('Clearing previous token refresh timer:', tokenRefreshTimerRef.current);
+      clearTimeout(tokenRefreshTimerRef.current);
+    }
+
+    // Schedule refresh at 90% of token lifetime (10% buffer before expiry)
+    const refreshDelay = Math.max(expiresInMs * 0.9, 30000); // minimum 30 seconds
+    console.log(`Scheduling token refresh in ${Math.round(refreshDelay / 1000)}s (90% of ${Math.round(expiresInMs / 1000)}s lifetime)`);
+
+    tokenRefreshTimerRef.current = setTimeout(async () => {
+      console.log('Background token refresh timer fired');
+      try {
+        await fetchToken();
+        console.log('Background token refresh completed successfully');
+      } catch (error) {
+        console.error('Background token refresh failed:', error);
+        // Retry in 30 seconds on failure
+        console.log('Scheduling retry in 30 seconds');
+        setTimeout(() => fetchToken().catch(console.error), 30000);
+      }
+    }, refreshDelay);
+    console.log('Token refresh timer set with ID:', tokenRefreshTimerRef.current);
+  };
 
   // Function to fetch a new token
   const fetchToken = async (): Promise<string> => {
@@ -39,6 +67,9 @@ export default function Home() {
       // Store token and expiry time
       tokenRef.current = data.access_token;
       tokenExpiryRef.current = Date.now() + (parseInt(data.expires_in) * 1000);
+
+      // Schedule next token refresh
+      scheduleTokenRefresh(parseInt(data.expires_in) * 1000);
 
       return data.access_token;
     };
@@ -79,7 +110,7 @@ export default function Home() {
               return {
                 url: url,
                 headers: {
-                  'Authorization': `Bearer ${token}`
+                  'Authorization': `Bearer ${tokenRef.current}`
                 }
               };
             }
@@ -100,6 +131,10 @@ export default function Home() {
       if (map.current) {
         map.current.remove();
       }
+        // Clear token refresh timer
+        if (tokenRefreshTimerRef.current) {
+          clearTimeout(tokenRefreshTimerRef.current);
+        }
     };
   }, []);
 
