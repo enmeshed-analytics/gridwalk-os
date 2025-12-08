@@ -1,5 +1,5 @@
 use crate::config::AppState;
-use crate::layer::{LayerUpload, LayerUploadStatus};
+use crate::layer::{Layer, LayerUpload, LayerUploadStatus};
 use axum::{
     extract::State,
     http::{
@@ -9,6 +9,7 @@ use axum::{
     response::IntoResponse,
 };
 use base64::prelude::*;
+use gridwalk_core::LayerCore;
 use serde_json::json;
 use std::sync::Arc;
 use tokio::fs;
@@ -149,8 +150,36 @@ pub async fn post_tus(
         )
     })?;
 
+    // Generate a unique UUID that doesn't already exist as a Layer
+    let mut layer_id = Uuid::new_v4();
+    let mut retry_count = 0;
+    const MAX_RETRIES: usize = 5;
+
+    while retry_count < MAX_RETRIES {
+        if !Layer::exists(layer_id, &*state.app_db).await.map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(json!({"error": format!("Failed to check layer existence: {}", e)})),
+            )
+        })? {
+            break;
+        }
+
+        retry_count += 1;
+        if retry_count >= MAX_RETRIES {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(
+                    json!({"error": "Failed to generate unique layer ID after maximum retries"}),
+                ),
+            ));
+        }
+
+        layer_id = Uuid::new_v4();
+    }
+
     let layer_upload = LayerUpload {
-        id: Uuid::new_v4(),
+        id: layer_id,
         status: LayerUploadStatus::Uploading,
         name,
         upload_type: Some(upload_type),
@@ -170,6 +199,7 @@ pub async fn post_tus(
         )
     })?;
 
+    println!("Saving layer upload record to database: {:?}", layer_upload);
     layer_upload.save(&*state.app_db).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -181,7 +211,7 @@ pub async fn post_tus(
     response_headers.insert("tus-resumable", HeaderValue::from_static("1.0.0"));
     response_headers.insert(
         LOCATION,
-        HeaderValue::from_str(&format!("/layers/{}", layer_upload.id)).map_err(|_| {
+        HeaderValue::from_str(&format!("/layers/upload/{}", layer_upload.id)).map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 axum::Json(json!({"error": "Failed to create location header"})),

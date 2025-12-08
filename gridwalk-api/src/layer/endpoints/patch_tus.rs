@@ -12,6 +12,7 @@ use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::{fs, io::AsyncWriteExt};
+use tracing::info;
 use uuid::Uuid;
 
 // TODO: Move GDAL processing and database insertion to background worker
@@ -333,6 +334,9 @@ pub async fn patch_tus(
             id: layer_upload.id,
             status: LayerStatus::Available,
             name: layer_upload.name.clone(),
+            metadata: Some(json!({
+                "upload_size": layer_upload.current_offset
+            })),
             created_at: layer_upload.created_at,
             updated_at: layer_upload.updated_at,
         };
@@ -362,6 +366,10 @@ pub async fn patch_tus(
                 axum::Json(json!({"error": format!("Failed to save layer record: {}", e)})),
             )
         })?;
+        info!(
+            "Layer upload {} completed and layer {} created",
+            layer_upload.id, layer.id
+        );
 
         // Commit the transaction
         tx.commit().await.map_err(|e| {
@@ -370,7 +378,21 @@ pub async fn patch_tus(
                 axum::Json(json!({"error": format!("Failed to commit transaction: {}", e  )})),
             )
         })?;
-        return Ok((StatusCode::NO_CONTENT, HeaderMap::new()));
+
+        // Prepare response headers for completed upload
+        let mut response_headers = HeaderMap::new();
+        response_headers.insert("tus-resumable", HeaderValue::from_static("1.0.0"));
+        response_headers.insert(
+            "upload-offset",
+            HeaderValue::from_str(&layer_upload.current_offset.to_string()).map_err(|_| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    axum::Json(json!({"error": "Failed to create upload-offset header"})),
+                )
+            })?,
+        );
+
+        return Ok((StatusCode::NO_CONTENT, response_headers));
     }
 
     // If not complete, update the LayerUpload record

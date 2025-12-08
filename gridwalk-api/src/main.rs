@@ -5,7 +5,7 @@ mod layer;
 use anyhow::Result;
 use axum::{
     Router,
-    routing::{get, patch, post},
+    routing::{get, head, patch, post},
 };
 use tower_http::cors::CorsLayer;
 use tracing::info;
@@ -34,8 +34,9 @@ async fn main() -> Result<()> {
     let router = Router::new()
         .route("/service/os/credentials", post(basemap::set_os_credentials))
         .route("/service/os/token", get(basemap::get_os_token))
-        .route("/layers", post(layer::post_tus))
-        .route("/layers/:layer_id", patch(layer::patch_tus))
+        .route("/layers/upload", post(layer::post_tus))
+        .route("/layers/upload/:layer_id", patch(layer::patch_tus))
+        .route("/layers/upload/:layer_id", head(layer::head_tus))
         .route("/layers", get(layer::get_layers))
         .route("/layers/:layer_id/tiles/:z/:x/:y", get(layer::get_tile))
         .with_state(std::sync::Arc::new(app_state))

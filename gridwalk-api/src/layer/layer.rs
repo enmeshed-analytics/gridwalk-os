@@ -20,6 +20,7 @@ pub struct Layer {
     pub id: Uuid,
     pub status: LayerStatus,
     pub name: String,
+    pub metadata: Option<serde_json::Value>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -38,6 +39,7 @@ impl<'r> FromRow<'r, PgRow> for Layer {
                 })?
             },
             name: row.try_get("name")?,
+            metadata: row.try_get::<Option<serde_json::Value>, _>("metadata")?,
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
         })
@@ -51,17 +53,19 @@ impl gridwalk_core::LayerCore for Layer {
     {
         async move {
             // Query to insert a new row
-            let query = "INSERT INTO gridwalk.layers (id, status, name, created_at, updated_at) \
-                         VALUES ($1, $2, $3, $4, $5) \
+            let query = "INSERT INTO gridwalk.layers (id, status, name, metadata, created_at, updated_at) \
+                         VALUES ($1, $2, $3, $4, $5, $6) \
                          ON CONFLICT (id) DO UPDATE SET \
                          status = EXCLUDED.status, \
                          name = EXCLUDED.name, \
+                         metadata = EXCLUDED.metadata, \
                          updated_at = EXCLUDED.updated_at";
 
             sqlx::query(query)
                 .bind(self.id)
                 .bind(self.status.to_string())
                 .bind(&self.name)
+                .bind(&self.metadata)
                 .bind(self.created_at)
                 .bind(self.updated_at)
                 .execute(executor)
@@ -102,6 +106,21 @@ impl gridwalk_core::LayerCore for Layer {
                 .fetch_one(executor)
                 .await?;
             Ok(layer)
+        }
+    }
+
+    fn exists<'e, E>(
+        id: Uuid,
+        executor: E,
+    ) -> impl std::future::Future<Output = Result<bool>> + Send
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        async move {
+            let query = "SELECT EXISTS(SELECT 1 FROM gridwalk.layers WHERE id = $1) AS exists";
+
+            let row: (bool,) = sqlx::query_as(query).bind(id).fetch_one(executor).await?;
+            Ok(row.0)
         }
     }
 }
