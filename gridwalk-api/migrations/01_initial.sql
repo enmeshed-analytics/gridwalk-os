@@ -15,6 +15,11 @@ CREATE TABLE gridwalk.layers (
     id UUID PRIMARY KEY,
     status VARCHAR(50) NOT NULL,
     name VARCHAR(255) NOT NULL,
+    layer_category VARCHAR(100),
+    location_namespace VARCHAR(255) NOT NULL,
+    location_name VARCHAR(255) NOT NULL,
+    geometry_field VARCHAR(100),
+    srid INTEGER,
     metadata JSONB,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP

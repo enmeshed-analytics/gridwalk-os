@@ -26,11 +26,17 @@ pub async fn create(
     }
     metadata.insert("geometry".to_string(), format!("{:?}", payload.geometry));
 
+    let layer_id = Uuid::new_v4();
     // Create new Layer struct
     let new_layer = Layer {
-        id: Uuid::new_v4(),
+        id: layer_id,
         status: crate::layer::LayerStatus::Available,
         name: payload.name,
+        layer_category: crate::layer::LayerCategory::Custom,
+        location_namespace: "gridwalk_layer_data".to_string(),
+        location_name: layer_id.to_string(),
+        geometry_field: Some("geometry".to_string()),
+        srid: Some(gridwalk_core::Srid::EPSG4326),
         metadata: None,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),

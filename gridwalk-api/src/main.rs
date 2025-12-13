@@ -37,6 +37,7 @@ async fn main() -> Result<()> {
         .route("/layers/upload", post(layer::post_tus))
         .route("/layers/upload/:layer_id", patch(layer::patch_tus))
         .route("/layers/upload/:layer_id", head(layer::head_tus))
+        .route("/layers/register", post(layer::register_layer))
         .route("/layers", get(layer::get_layers))
         .route("/layers/:layer_id/tiles/:z/:x/:y", get(layer::get_tile))
         .with_state(std::sync::Arc::new(app_state))

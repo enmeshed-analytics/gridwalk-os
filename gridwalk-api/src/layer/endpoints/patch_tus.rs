@@ -334,6 +334,12 @@ pub async fn patch_tus(
             id: layer_upload.id,
             status: LayerStatus::Available,
             name: layer_upload.name.clone(),
+            layer_category: crate::layer::LayerCategory::Custom,
+            location_namespace: "gridwalk_layer_data".to_string(),
+            location_name: layer_upload.id.to_string(),
+            geometry_field: Some("geometry".to_string()),
+            // TODO: Determine SRID from uploaded data
+            srid: Some(gridwalk_core::Srid::EPSG4326),
             metadata: Some(json!({
                 "upload_size": layer_upload.current_offset
             })),

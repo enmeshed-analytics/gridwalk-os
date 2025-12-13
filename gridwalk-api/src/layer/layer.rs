@@ -15,11 +15,23 @@ pub enum LayerStatus {
     Failed,
 }
 
+#[derive(Clone, Debug, Display, Serialize, Deserialize, EnumString, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum LayerCategory {
+    Custom,
+    OSM,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Layer {
     pub id: Uuid,
     pub status: LayerStatus,
     pub name: String,
+    pub layer_category: LayerCategory,
+    pub location_namespace: String,
+    pub location_name: String,
+    pub geometry_field: Option<String>,
+    pub srid: Option<gridwalk_core::Srid>,
     pub metadata: Option<serde_json::Value>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
@@ -39,6 +51,30 @@ impl<'r> FromRow<'r, PgRow> for Layer {
                 })?
             },
             name: row.try_get("name")?,
+            layer_category: {
+                let category_str: String = row.try_get("layer_category")?;
+                category_str.parse().map_err(|e| {
+                    sqlx::Error::Decode(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Invalid layer_category value: {} - {}", category_str, e),
+                    )))
+                })?
+            },
+            location_namespace: row.try_get("location_namespace")?,
+            location_name: row.try_get("location_name")?,
+            geometry_field: row.try_get::<Option<String>, _>("geometry_field")?,
+            srid: {
+                let srid_opt: Option<String> = row.try_get("srid")?;
+                match srid_opt {
+                    Some(srid_str) => Some(srid_str.parse().map_err(|e| {
+                        sqlx::Error::Decode(Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Invalid srid value: {} - {}", srid_str, e),
+                        )))
+                    })?),
+                    None => None,
+                }
+            },
             metadata: row.try_get::<Option<serde_json::Value>, _>("metadata")?,
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
@@ -53,11 +89,14 @@ impl gridwalk_core::LayerCore for Layer {
     {
         async move {
             // Query to insert a new row
-            let query = "INSERT INTO gridwalk.layers (id, status, name, metadata, created_at, updated_at) \
-                         VALUES ($1, $2, $3, $4, $5, $6) \
+            let query = "INSERT INTO gridwalk.layers (id, status, name, layer_category, location_namespace, location_name, metadata, created_at, updated_at) \
+                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
                          ON CONFLICT (id) DO UPDATE SET \
                          status = EXCLUDED.status, \
                          name = EXCLUDED.name, \
+                         layer_category = EXCLUDED.layer_category, \
+                         location_namespace = EXCLUDED.location_namespace, \
+                         location_name = EXCLUDED.location_name, \
                          metadata = EXCLUDED.metadata, \
                          updated_at = EXCLUDED.updated_at";
 
@@ -65,6 +104,9 @@ impl gridwalk_core::LayerCore for Layer {
                 .bind(self.id)
                 .bind(self.status.to_string())
                 .bind(&self.name)
+                .bind(self.layer_category.to_string())
+                .bind(&self.location_namespace)
+                .bind(&self.location_name)
                 .bind(&self.metadata)
                 .bind(self.created_at)
                 .bind(self.updated_at)
