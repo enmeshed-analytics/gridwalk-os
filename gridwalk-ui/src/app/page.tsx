@@ -17,6 +17,7 @@ export default function Home() {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const selectedLayers = useLayerStore(state => state.selectedLayers);
+ const getSelectedLayerName = useLayerStore(state => state.getSelectedLayerName);
   const [mapLoaded, setMapLoaded] = useState(false);
 
   // Token management refs
@@ -155,7 +156,7 @@ export default function Home() {
      }
 
      // Add new layers that are selected but not on map
-     selectedLayers.forEach(layerId => {
+     selectedLayers.forEach((layer, layerId) => {
        if (!currentMapLayers.has(layerId)) {
          addLayerToMap(layerId);
        }
@@ -172,6 +173,12 @@ export default function Home() {
    const addLayerToMap = (layerId: string) => {
      if (!map.current) return;
 
+     // Get the layer name from the store
+     const layerName = getSelectedLayerName(layerId);
+     if (!layerName) {
+       console.error(`Layer name not found for ID: ${layerId}`);
+       return;
+     }
      try {
        // Add the vector tile source
        map.current.addSource(layerId, {
@@ -184,7 +191,7 @@ export default function Home() {
          id: `${layerId}-fill`,
          type: 'fill',
          source: layerId,
-         'source-layer': layerId,
+         'source-layer': layerName,
          paint: {
            'fill-color': '#0080ff',
            'fill-opacity': 0.5
@@ -196,7 +203,7 @@ export default function Home() {
          id: `${layerId}-line`,
          type: 'line',
          source: layerId,
-         'source-layer': layerId,
+         'source-layer': layerName,
          paint: {
            'line-color': '#0080ff',
            'line-width': 2,

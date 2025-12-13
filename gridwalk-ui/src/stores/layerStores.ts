@@ -1,63 +1,74 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+interface SelectedLayer {
+  id: string
+  name: string
+}
+
 interface LayerStore {
-  selectedLayers: Set<string>
-  toggleLayer: (layerId: string) => void
-  selectLayer: (layerId: string) => void
+  selectedLayers: Map<string, SelectedLayer>
+  toggleLayer: (layer: SelectedLayer) => void
+  selectLayer: (layer: SelectedLayer) => void
   deselectLayer: (layerId: string) => void
-  selectMultiple: (layerIds: string[]) => void
+  selectMultiple: (layers: SelectedLayer[]) => void
   clearSelection: () => void
   isSelected: (layerId: string) => boolean
   getSelectedCount: () => number
   getSelectedIds: () => string[]
+  getSelectedLayerName: (layerId: string) => string | undefined
+  getSelectedLayers: () => SelectedLayer[]
 }
 
 export const useLayerStore = create<LayerStore>()(
   persist(
     (set, get) => ({
-  selectedLayers: new Set<string>(),
+  selectedLayers: new Map<string, SelectedLayer>(),
 
-  toggleLayer: (layerId: string) =>
+  toggleLayer: (layer: SelectedLayer) =>
     set((state) => {
-      const newSelected = new Set(state.selectedLayers)
-      if (newSelected.has(layerId)) {
-        newSelected.delete(layerId)
+      const newSelected = new Map(state.selectedLayers)
+      if (newSelected.has(layer.id)) {
+        newSelected.delete(layer.id)
       } else {
-        newSelected.add(layerId)
+        newSelected.set(layer.id, layer)
       }
       return { selectedLayers: newSelected }
     }),
 
-  selectLayer: (layerId: string) =>
+  selectLayer: (layer: SelectedLayer) =>
     set((state) => {
-      const newSelected = new Set(state.selectedLayers)
-      newSelected.add(layerId)
+      const newSelected = new Map(state.selectedLayers)
+      newSelected.set(layer.id, layer)
       return { selectedLayers: newSelected }
     }),
 
   deselectLayer: (layerId: string) =>
     set((state) => {
-      const newSelected = new Set(state.selectedLayers)
+      const newSelected = new Map(state.selectedLayers)
       newSelected.delete(layerId)
       return { selectedLayers: newSelected }
     }),
 
-  selectMultiple: (layerIds: string[]) =>
+  selectMultiple: (layers: SelectedLayer[]) =>
     set((state) => {
-      const newSelected = new Set(state.selectedLayers)
-      layerIds.forEach(id => newSelected.add(id))
+      const newSelected = new Map(state.selectedLayers)
+      layers.forEach(layer => newSelected.set(layer.id, layer))
       return { selectedLayers: newSelected }
     }),
 
   clearSelection: () =>
-    set(() => ({ selectedLayers: new Set<string>() })),
+    set(() => ({ selectedLayers: new Map<string, SelectedLayer>() })),
 
   isSelected: (layerId: string) => get().selectedLayers.has(layerId),
 
   getSelectedCount: () => get().selectedLayers.size,
 
-  getSelectedIds: () => Array.from(get().selectedLayers),
+  getSelectedIds: () => Array.from(get().selectedLayers.keys()),
+
+  getSelectedLayerName: (layerId: string) => get().selectedLayers.get(layerId)?.name,
+
+  getSelectedLayers: () => Array.from(get().selectedLayers.values()),
     }),
     {
       name: 'layer-selection',
@@ -70,7 +81,9 @@ export const useLayerStore = create<LayerStore>()(
             ...parsed,
             state: {
               ...parsed.state,
-              selectedLayers: new Set(parsed.state.selectedLayers || [])
+              selectedLayers: new Map(
+                (parsed.state.selectedLayers || []).map((layer: SelectedLayer) => [layer.id, layer])
+              )
             }
           }
         },
@@ -79,7 +92,7 @@ export const useLayerStore = create<LayerStore>()(
             ...value,
             state: {
               ...value.state,
-              selectedLayers: Array.from(value.state.selectedLayers)
+              selectedLayers: Array.from(value.state.selectedLayers.values())
             }
           }
           localStorage.setItem(name, JSON.stringify(serialized))

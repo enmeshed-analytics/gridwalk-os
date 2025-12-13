@@ -150,13 +150,13 @@ export function Sidebar() {
                             ? 'bg-green-100 border-green-300 hover:bg-green-200' 
                             : 'bg-green-50 border-green-200 hover:bg-gray-50'
                         }`}
-                        onClick={() => toggleLayer(layer.id)}
+                        onClick={() => toggleLayer({ id: layer.id, name: layer.name })}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-3">
                             <Checkbox 
                               checked={isSelected(layer.id)}
-                              onChange={() => toggleLayer(layer.id)}
+                              onChange={() => toggleLayer({ id: layer.id, name: layer.name })}
                               className="border-2 border-gray-400 data-[state=checked]:bg-green-600 data-[state=checked]:border-green-600 bg-white"
                             />
                             <div className="font-medium">{layer.name}</div>
@@ -176,8 +176,8 @@ export function Sidebar() {
                   <ul className="space-y-2">
                     {layers.filter(layer => layer.status === 'uploading').map((layer) => (
                       <li 
-                        key={layer.id} 
-                        className="p-3 rounded-md border bg-yellow-50 border-yellow-200"
+                       key={layer.id}
+                       className="p-3 rounded-md border bg-yellow-50 border-yellow-200"
                       >
                         <div className="flex items-center justify-between">
                           <div className="font-medium">{layer.name}</div>
