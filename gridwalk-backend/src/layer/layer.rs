@@ -15,23 +15,18 @@ pub enum LayerStatus {
     Failed,
 }
 
-#[derive(Clone, Debug, Display, Serialize, Deserialize, EnumString, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum LayerCategory {
-    Custom,
-    OSM,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Layer {
     pub id: Uuid,
     pub status: LayerStatus,
     pub name: String,
-    pub layer_category: LayerCategory,
+    pub layer_category: gridwalk_core::LayerCategory,
     pub location_namespace: String,
     pub location_name: String,
     pub geometry_field: Option<String>,
     pub srid: Option<gridwalk_core::Srid>,
+    pub min_zoom: Option<u8>,
+    pub max_zoom: Option<u8>,
     pub metadata: Option<serde_json::Value>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
@@ -64,17 +59,19 @@ impl<'r> FromRow<'r, PgRow> for Layer {
             location_name: row.try_get("location_name")?,
             geometry_field: row.try_get::<Option<String>, _>("geometry_field")?,
             srid: {
-                let srid_opt: Option<String> = row.try_get("srid")?;
+                let srid_opt: Option<i32> = row.try_get("srid")?;
                 match srid_opt {
-                    Some(srid_str) => Some(srid_str.parse().map_err(|e| {
+                    Some(srid_val) => Some(srid_val.to_string().parse().map_err(|e| {
                         sqlx::Error::Decode(Box::new(std::io::Error::new(
                             std::io::ErrorKind::InvalidData,
-                            format!("Invalid srid value: {} - {}", srid_str, e),
+                            format!("Invalid srid value: {} - {}", srid_val, e),
                         )))
                     })?),
                     None => None,
                 }
             },
+            min_zoom: row.try_get::<Option<i32>, _>("min_zoom")?.map(|v| v as u8),
+            max_zoom: row.try_get::<Option<i32>, _>("max_zoom")?.map(|v| v as u8),
             metadata: row.try_get::<Option<serde_json::Value>, _>("metadata")?,
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
@@ -89,14 +86,18 @@ impl gridwalk_core::LayerCore for Layer {
     {
         async move {
             // Query to insert a new row
-            let query = "INSERT INTO gridwalk.layers (id, status, name, layer_category, location_namespace, location_name, metadata, created_at, updated_at) \
-                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
+            let query = "INSERT INTO gridwalk.layers (id, status, name, layer_category, location_namespace, location_name, geometry_field, srid, min_zoom, max_zoom, metadata, created_at, updated_at) \
+                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) \
                          ON CONFLICT (id) DO UPDATE SET \
                          status = EXCLUDED.status, \
                          name = EXCLUDED.name, \
                          layer_category = EXCLUDED.layer_category, \
                          location_namespace = EXCLUDED.location_namespace, \
                          location_name = EXCLUDED.location_name, \
+                         geometry_field = EXCLUDED.geometry_field, \
+                         srid = EXCLUDED.srid, \
+                         min_zoom = EXCLUDED.min_zoom, \
+                         max_zoom = EXCLUDED.max_zoom, \
                          metadata = EXCLUDED.metadata, \
                          updated_at = EXCLUDED.updated_at";
 
@@ -107,6 +108,14 @@ impl gridwalk_core::LayerCore for Layer {
                 .bind(self.layer_category.to_string())
                 .bind(&self.location_namespace)
                 .bind(&self.location_name)
+                .bind(&self.geometry_field)
+                .bind(
+                    self.srid
+                        .as_ref()
+                        .map(|s| s.to_string().parse::<i32>().unwrap()),
+                )
+                .bind(self.min_zoom.map(|v| v as i16))
+                .bind(self.max_zoom.map(|v| v as i16))
                 .bind(&self.metadata)
                 .bind(self.created_at)
                 .bind(self.updated_at)
@@ -119,15 +128,17 @@ impl gridwalk_core::LayerCore for Layer {
     fn list<'e, E>(
         limit: u64,
         offset: u64,
+        layer_category: gridwalk_core::LayerCategory,
         executor: E,
     ) -> impl std::future::Future<Output = Result<Vec<Self>>> + Send
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         async move {
-            let query = "SELECT * FROM gridwalk.layers ORDER BY created_at DESC LIMIT $1 OFFSET $2";
+            let query = "SELECT * FROM gridwalk.layers WHERE layer_category = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3";
 
             let layers = sqlx::query_as::<_, Layer>(query)
+                .bind(layer_category.to_string())
                 .bind(limit as i64)
                 .bind(offset as i64)
                 .fetch_all(executor)

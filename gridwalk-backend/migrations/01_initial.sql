@@ -20,6 +20,8 @@ CREATE TABLE gridwalk.layers (
     location_name VARCHAR(255) NOT NULL,
     geometry_field VARCHAR(100),
     srid INTEGER,
+    min_zoom INTEGER,
+    max_zoom INTEGER,
     metadata JSONB,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP

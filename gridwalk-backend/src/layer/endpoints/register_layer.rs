@@ -1,5 +1,5 @@
 use crate::config::AppState;
-use crate::layer::{Layer, LayerCategory, LayerStatus};
+use crate::layer::{Layer, LayerStatus};
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use gridwalk_core::LayerCore;
 use serde_json::json;
@@ -11,7 +11,7 @@ pub struct RegisterLayerRequest {
     pub name: String,
     pub location_namespace: String,
     pub location_name: String,
-    pub layer_category: LayerCategory,
+    pub layer_category: gridwalk_core::LayerCategory,
     pub geometry_field: String,
     pub srid: gridwalk_core::Srid,
     pub metadata: Option<serde_json::Value>,
@@ -61,6 +61,8 @@ pub async fn register_layer(
         location_name: payload.location_name,
         geometry_field: Some(payload.geometry_field),
         srid: Some(payload.srid),
+        min_zoom: None,
+        max_zoom: None,
         metadata: payload.metadata,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),

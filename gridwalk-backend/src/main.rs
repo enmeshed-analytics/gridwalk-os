@@ -13,7 +13,10 @@ use tracing::info;
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize tracing for logging
-    tracing_subscriber::fmt().with_ansi(false).init();
+    tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
 
     let config = config::Config::from_env()?;
     let app_state = config::AppState::new(config).await?;
@@ -40,6 +43,8 @@ async fn main() -> Result<()> {
         .route("/layers/register", post(layer::register_layer))
         .route("/layers", get(layer::get_layers))
         .route("/layers/:layer_id/tiles/:z/:x/:y", get(layer::get_tile))
+        .route("/layers/register_osm", post(layer::register_osm))
+        .route("/layers/osm/tiles/:z/:x/:y", get(layer::get_osm_tile))
         .with_state(std::sync::Arc::new(app_state))
         .layer(CorsLayer::permissive()); // Allow CORS for UI requests
 

@@ -8,24 +8,13 @@ use gridwalk_core::{LayerCore, VectorConnector};
 use serde_json::json;
 use std::sync::Arc;
 use tracing::debug;
-use uuid::Uuid;
 
-/// GET endpoint to retrieve a map tile in MVT (Mapbox Vector Tile) format
+/// GET endpoint to retrieve an OSM map tile in MVT (Mapbox Vector Tile) format
 #[axum::debug_handler]
-pub async fn get_tile(
-    RequestPath((layer_id, z, x, y)): RequestPath<(Uuid, u32, u32, u32)>,
+pub async fn get_osm_tile(
+    RequestPath((z, x, y)): RequestPath<(u32, u32, u32)>,
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, (StatusCode, axum::Json<serde_json::Value>)> {
-    // TODO: Cache layer in memory to avoid repeated DB lookups for each tile request
-    let layer = crate::layer::Layer::get(layer_id, &*state.app_db)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::NOT_FOUND,
-                axum::Json(json!({"error": format!("Layer not found: {}", e)})),
-            )
-        })?;
-
     // Get the vector connector from state
     let vector_connector = if let Some(vector_connector) = state.connection.as_vector() {
         vector_connector
@@ -47,23 +36,47 @@ pub async fn get_tile(
             )
         })?;
 
-    let layer_source = gridwalk_core::LayerSource::Database {
-        namespace: layer.location_namespace.clone(),
-        name: layer.location_name.clone(),
-        geometry_field: layer
-            .geometry_field
-            .clone()
-            .unwrap_or("geometry".to_string()),
-        srid: layer.srid.unwrap_or(gridwalk_core::Srid::EPSG4326),
-    };
+    // List OSM layers from the database
+    let layers = crate::layer::Layer::list(
+        100, // limit
+        0,   // offset
+        gridwalk_core::LayerCategory::OSM,
+        &*state.app_db,
+    )
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            axum::Json(json!({"error": format!("Failed to list OSM layers: {}", e)})),
+        )
+    })?;
 
-    let tile_layer_config = vec![gridwalk_core::TileLayerConfig {
-        source: layer_source,
-        layer_name: layer.name,
-        attributes: None, // Fetch all attributes
-    }];
+    // Build tile layer configs from OSM layers that match the zoom level
+    let tile_layer_config: Vec<gridwalk_core::TileLayerConfig> = layers
+        .iter()
+        .filter(|layer| {
+            let above_min = layer.min_zoom.map_or(true, |min| z >= min as u32);
+            let below_max = layer.max_zoom.map_or(true, |max| z <= max as u32);
+            above_min && below_max
+        })
+        .map(|layer| {
+            let layer_source = gridwalk_core::LayerSource::Database {
+                namespace: layer.location_namespace.clone(),
+                name: layer.location_name.clone(),
+                geometry_field: layer
+                    .geometry_field
+                    .clone()
+                    .unwrap_or_else(|| "geometry".to_string()),
+                srid: layer.srid.unwrap_or(gridwalk_core::Srid::EPSG4326),
+            };
+            gridwalk_core::TileLayerConfig {
+                source: layer_source,
+                layer_name: layer.name.clone(),
+                attributes: None, // Fetch all attributes
+            }
+        })
+        .collect();
 
-    debug!("Using PostGIS connector to fetch tile data");
     // Get the tile data from PostGIS
     let tile_data = postgis_connector
         .get_tile(&tile_layer_config, z, x, y)
@@ -74,7 +87,18 @@ pub async fn get_tile(
                 axum::Json(json!({"error": format!("Failed to get tile: {}", e)})),
             )
         })?;
-    debug!("Tile data length: {}", tile_data.len());
+    let layer_names: Vec<&str> = tile_layer_config
+        .iter()
+        .map(|c| c.layer_name.as_str())
+        .collect();
+    debug!(
+        "Serving tile z={} x={} y={}, layers: {:?}, size: {} bytes",
+        z,
+        x,
+        y,
+        layer_names,
+        tile_data.len()
+    );
 
     // Check if tile is empty
     if tile_data.is_empty() {

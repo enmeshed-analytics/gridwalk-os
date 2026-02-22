@@ -334,7 +334,7 @@ pub async fn patch_tus(
             id: layer_upload.id,
             status: LayerStatus::Available,
             name: layer_upload.name.clone(),
-            layer_category: crate::layer::LayerCategory::Custom,
+            layer_category: gridwalk_core::LayerCategory::Custom,
             location_namespace: "gridwalk_layer_data".to_string(),
             location_name: layer_upload.id.to_string(),
             geometry_field: Some("geometry".to_string()),
@@ -343,6 +343,8 @@ pub async fn patch_tus(
             metadata: Some(json!({
                 "upload_size": layer_upload.current_offset
             })),
+            min_zoom: None,
+            max_zoom: None,
             created_at: layer_upload.created_at,
             updated_at: layer_upload.updated_at,
         };
