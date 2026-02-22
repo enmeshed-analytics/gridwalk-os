@@ -6,11 +6,11 @@ volumes:
 
 services:
   database:
-    image: postgis/postgis:16-3.4
+    image: postgis/postgis:18-3.6
     container_name: gridwalk-database
     platform: linux/amd64
     volumes:
-      - database:/var/lib/postgresql/data
+      - database:/var/lib/postgresql
       - temp_data:/tmp
     environment:
       POSTGRES_DB: gridwalk
