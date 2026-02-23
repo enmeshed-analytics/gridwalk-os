@@ -1,0 +1,60 @@
+Loading an OSM Base Map into PostGIS with osm2pgsql
+=====================================================
+
+1. Install osm2pgsql
+
+   macOS:
+     brew install osm2pgsql
+
+   Ubuntu/Debian:
+     sudo apt install osm2pgsql
+
+2. Download an OSM data file (.osm.pbf)
+
+   Browse extracts at https://download.geofabrik.de/ and download a region.
+   For example, to get Great Britain:
+
+     curl -L -O https://download.geofabrik.de/europe/great-britain-latest.osm.pbf
+
+3. Create the osm schema
+
+   PGPASSWORD=password psql -h localhost -U admin -d gridwalk -c 'CREATE SCHEMA IF NOT EXISTS osm;'
+
+4. Load the data into PostGIS
+
+   Using the default docker-compose credentials (admin / password) with the
+   flex output and the Lua config (osm2pgsql.lua):
+
+   PGPASSWORD=password osm2pgsql -d gridwalk \
+     -H localhost \
+     -P 5432 \
+     -U admin \
+     -s \
+     -O flex \
+     -S osm2pgsql.lua \
+     -C 4000 \
+     --flat-nodes=/tmp/nodes.bin \
+     great-britain-latest.osm.pbf
+
+   Flags:
+     -s             slim mode (required for large files)
+     -O flex        use the flex output (Lua config)
+     -S             path to the Lua style file
+     -C 4000        allocate 4GB RAM for node cache
+     --flat-nodes   store node coords in a flat file instead of the database (faster)
+
+   One-liner:
+
+     PGPASSWORD=password osm2pgsql -d gridwalk -H localhost -P 5432 -U admin -s -O flex -S osm2pgsql.lua -C 4000 --flat-nodes=/tmp/nodes.bin great-britain-latest.osm.pbf
+
+   This creates tables in the osm schema:
+     osm.roads, osm.railways, osm.buildings, osm.water, osm.waterways,
+     osm.landuse, osm.natural, osm.places, osm.boundaries
+
+   Minimal import (for testing):
+
+   Use osm2pgsql-minimal.lua to only import roads, buildings, and water:
+
+     PGPASSWORD=password osm2pgsql -d gridwalk -H localhost -P 5432 -U admin -s -O flex -S osm2pgsql-minimal.lua -C 4000 --flat-nodes=/tmp/nodes.bin great-britain-latest.osm.pbf
+
+   This creates only: osm.roads, osm.buildings, osm.water
