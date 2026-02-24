@@ -56,7 +56,9 @@ pub fn decrypt_string(encrypted_data: &str, encryption_key: &str) -> Result<Stri
 
     // Extract nonce (first 12 bytes) and ciphertext (remaining bytes)
     let (nonce_bytes, ciphertext) = combined_data.split_at(12);
-    let nonce = Nonce::from(<[u8; 12]>::try_from(nonce_bytes).unwrap());
+    let nonce = Nonce::from(
+        <[u8; 12]>::try_from(nonce_bytes).expect("nonce is 12 bytes after split_at"),
+    );
 
     // Derive the same 256-bit key from the encryption key using SHA-256
     let mut hasher = <Sha256 as Digest>::new();
