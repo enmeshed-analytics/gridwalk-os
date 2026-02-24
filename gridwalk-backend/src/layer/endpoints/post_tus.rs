@@ -15,6 +15,8 @@ use std::sync::Arc;
 use tokio::fs;
 use uuid::Uuid;
 
+use super::MAX_UPLOAD_SIZE;
+
 // POST (using TUS protocol) function to create a new layer
 #[axum::debug_handler]
 pub async fn post_tus(
@@ -74,6 +76,18 @@ pub async fn post_tus(
             ),
         ));
     };
+
+    // Reject uploads exceeding the size limit
+    if let Some(size) = total_size {
+        if size > MAX_UPLOAD_SIZE {
+            return Err((
+                StatusCode::PAYLOAD_TOO_LARGE,
+                axum::Json(
+                    json!({"error": format!("Upload size {} exceeds maximum allowed size of {} bytes", size, MAX_UPLOAD_SIZE)}),
+                ),
+            ));
+        }
+    }
 
     // Parse Upload-Metadata header
     let metadata_header = headers.get("upload-metadata").ok_or_else(|| {

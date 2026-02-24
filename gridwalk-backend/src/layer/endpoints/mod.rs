@@ -8,6 +8,9 @@ mod register_osm;
 mod tiles;
 mod tiles_osm;
 
+// 1 GB max upload size
+pub(crate) const MAX_UPLOAD_SIZE: i64 = 1_073_741_824;
+
 pub use create::*;
 pub use get_layers::*;
 pub use head_tus::*;

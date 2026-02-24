@@ -15,6 +15,8 @@ use tokio::{fs, io::AsyncWriteExt};
 use tracing::info;
 use uuid::Uuid;
 
+use super::MAX_UPLOAD_SIZE;
+
 // TODO: Move GDAL processing and database insertion to background worker
 // TODO: Implement HEAD handler to get upload status.
 // PATCH (using TUS protocol) function to upload data to an existing layer
@@ -102,9 +104,52 @@ pub async fn patch_tus(
         ));
     }
 
+    // Handle deferred-length: if total_size is not yet set, check for Upload-Length header
+    if layer_upload.total_size.is_none() {
+        if let Some(length_header) = headers.get("upload-length") {
+            let declared_size: i64 = length_header
+                .to_str()
+                .map_err(|_| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        axum::Json(json!({"error": "Invalid Upload-Length header"})),
+                    )
+                })?
+                .parse()
+                .map_err(|_| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        axum::Json(json!({"error": "Upload-Length must be a valid integer"})),
+                    )
+                })?;
+
+            if declared_size > MAX_UPLOAD_SIZE {
+                return Err((
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    axum::Json(
+                        json!({"error": format!("Upload size {} exceeds maximum allowed size of {} bytes", declared_size, MAX_UPLOAD_SIZE)}),
+                    ),
+                ));
+            }
+
+            layer_upload.total_size = Some(declared_size);
+        }
+    }
+
+    // Reject if this chunk would push cumulative data beyond the max upload size
+    let new_offset = upload_offset + body.len() as i64;
+    if new_offset > MAX_UPLOAD_SIZE {
+        return Err((
+            StatusCode::PAYLOAD_TOO_LARGE,
+            axum::Json(
+                json!({"error": format!("Upload size would exceed maximum allowed size of {} bytes", MAX_UPLOAD_SIZE)}),
+            ),
+        ));
+    }
+
     // Validate that we don't exceed the total size (if known)
     if let Some(total_size) = layer_upload.total_size {
-        if upload_offset + body.len() as i64 > total_size {
+        if new_offset > total_size {
             return Err((
                 StatusCode::PAYLOAD_TOO_LARGE,
                 axum::Json(json!({"error": "Upload would exceed declared file size"})),
