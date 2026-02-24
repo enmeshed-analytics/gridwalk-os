@@ -175,6 +175,7 @@ pub async fn patch_tus(
     layer_upload.updated_at = chrono::Utc::now();
 
     // Check if upload is complete and process the file
+    let mut detected_srid: Option<i32> = None;
     if let Some(total_size) = layer_upload.total_size {
         if layer_upload.current_offset >= total_size {
             layer_upload.status = LayerUploadStatus::Uploaded;
@@ -197,6 +198,8 @@ pub async fn patch_tus(
             let schema = gridwalk_core::file::extract_layer_schema(dataset, vector_connector)
                 .await
                 .map_err(|e| internal_error("Failed to read uploaded file", e))?;
+
+            detected_srid = schema.srid;
 
             // Create the layer table in the connection database
             vector_connector
@@ -256,6 +259,7 @@ pub async fn patch_tus(
                             "gridwalk_layer_data",
                             &layer_name,
                             None,
+                            detected_srid,
                         )
                         .map_err(|e| format!("SQL generation error: {}", e))?;
 
@@ -338,8 +342,10 @@ pub async fn patch_tus(
             location_namespace: "gridwalk_layer_data".to_string(),
             location_name: layer_upload.id.to_string(),
             geometry_field: Some("geometry".to_string()),
-            // TODO: Determine SRID from uploaded data
-            srid: Some(gridwalk_core::Srid::EPSG4326),
+            srid: match detected_srid {
+                Some(3857) => Some(gridwalk_core::Srid::EPSG3857),
+                _ => Some(gridwalk_core::Srid::EPSG4326),
+            },
             metadata: Some(json!({
                 "upload_size": layer_upload.current_offset
             })),
