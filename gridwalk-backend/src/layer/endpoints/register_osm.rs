@@ -1,6 +1,7 @@
 use crate::config::AppState;
 use crate::error::internal_error;
 use crate::layer::{Layer, LayerStatus};
+use crate::utils::validate_identifier;
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use gridwalk_core::LayerCore;
 use serde_json::json;
@@ -157,6 +158,9 @@ pub async fn register_osm(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<RegisterOsmRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, axum::Json<serde_json::Value>)> {
+    validate_identifier(&payload.schema_name, "schema_name")?;
+    validate_identifier(&payload.geometry_field, "geometry_field")?;
+
     // Query tables in the specified schema
     let tables: Vec<(String,)> = match payload.table_type {
         TableType::Base => {

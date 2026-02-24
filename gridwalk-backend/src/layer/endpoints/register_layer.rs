@@ -1,6 +1,7 @@
 use crate::config::AppState;
 use crate::error::internal_error;
 use crate::layer::{Layer, LayerStatus};
+use crate::utils::validate_identifier;
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use gridwalk_core::LayerCore;
 use serde_json::json;
@@ -24,6 +25,10 @@ pub async fn register_layer(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<RegisterLayerRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, axum::Json<serde_json::Value>)> {
+    validate_identifier(&payload.location_namespace, "location_namespace")?;
+    validate_identifier(&payload.location_name, "location_name")?;
+    validate_identifier(&payload.geometry_field, "geometry_field")?;
+
     // Generate a unique UUID that doesn't already exist as a Layer
     let mut layer_id = Uuid::new_v4();
     let mut retry_count = 0;

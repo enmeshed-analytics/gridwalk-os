@@ -2,6 +2,7 @@ mod basemap;
 mod config;
 mod error;
 mod layer;
+mod utils;
 
 use anyhow::Result;
 use axum::{
