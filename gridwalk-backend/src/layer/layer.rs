@@ -109,11 +109,7 @@ impl gridwalk_core::LayerCore for Layer {
                 .bind(&self.location_namespace)
                 .bind(&self.location_name)
                 .bind(&self.geometry_field)
-                .bind(
-                    self.srid
-                        .as_ref()
-                        .map(|s| s.to_string().parse::<i32>().unwrap()),
-                )
+                .bind(self.srid.map(i32::from))
                 .bind(self.min_zoom.map(|v| v as i16))
                 .bind(self.max_zoom.map(|v| v as i16))
                 .bind(&self.metadata)
