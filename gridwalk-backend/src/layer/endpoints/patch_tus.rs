@@ -1,4 +1,5 @@
 use crate::config::AppState;
+use crate::error::internal_error;
 use crate::layer::{Layer, LayerStatus, LayerUpload, LayerUploadStatus};
 use axum::{
     body::Bytes,
@@ -77,12 +78,7 @@ pub async fn patch_tus(
     // Get the layer upload record from database
     let mut layer_upload = LayerUpload::get(&*state.app_db, layer_id)
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                axum::Json(json!({"error": format!("Database error: {}", e)})),
-            )
-        })?;
+        .map_err(|e| internal_error("Failed to get layer upload", e))?;
 
     // Validate that the layer is in uploading state
     if layer_upload.status != LayerUploadStatus::Uploading {
@@ -163,27 +159,16 @@ pub async fn patch_tus(
         .append(true)
         .open(&upload_file_path)
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                axum::Json(json!({"error": format!("Failed to open upload file: {}", e)})),
-            )
-        })?;
+        .map_err(|e| internal_error("Failed to open upload file", e))?;
 
     // Write the data
-    file.write_all(&body).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            axum::Json(json!({"error": format!("Failed to write to upload file: {}", e)})),
-        )
-    })?;
+    file.write_all(&body)
+        .await
+        .map_err(|e| internal_error("Failed to write to upload file", e))?;
 
-    file.flush().await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            axum::Json(json!({"error": format!("Failed to flush upload file: {}", e)})),
-        )
-    })?;
+    file.flush()
+        .await
+        .map_err(|e| internal_error("Failed to flush upload file", e))?;
 
     // Update layer's current offset and updated_at timestamp
     layer_upload.current_offset += body.len() as i64;
@@ -206,33 +191,18 @@ pub async fn patch_tus(
             };
 
             let dataset =
-                gridwalk_core::file_utils::open_dataset(&upload_file_path).map_err(|e| {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        axum::Json(
-                            json!({"error": format!("Failed to open uploaded dataset: {}", e)}),
-                        ),
-                    )
-                })?;
+                gridwalk_core::file_utils::open_dataset(&upload_file_path)
+                    .map_err(|e| internal_error("Failed to open uploaded dataset", e))?;
 
             let schema = gridwalk_core::file::extract_layer_schema(dataset, vector_connector)
                 .await
-                .map_err(|e| {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        axum::Json(
-                            json!({"error": format!("Failed to read uploaded file: {}", e)}),
-                        ),
-                    )
-                })?;
+                .map_err(|e| internal_error("Failed to read uploaded file", e))?;
 
             // Create the layer table in the connection database
-            vector_connector.create_layer(&schema).await.map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    axum::Json(json!({"error": format!("Failed to create layer table: {}", e)})),
-                )
-            })?;
+            vector_connector
+                .create_layer(&schema)
+                .await
+                .map_err(|e| internal_error("Failed to create layer table", e))?;
 
             println!("Upload complete for layer {}", layer_upload.id);
 
@@ -309,12 +279,11 @@ pub async fn patch_tus(
             });
 
             // Start a transaction for database operations
-            let mut tx = postgis_connector.pool.begin().await.map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    axum::Json(json!({"error": format!("Failed to start transaction: {}", e)})),
-                )
-            })?;
+            let mut tx = postgis_connector
+                .pool
+                .begin()
+                .await
+                .map_err(|e| internal_error("Failed to start transaction", e))?;
 
             // Process SQL statements as they arrive from the GDAL task
             let mut inserted_count = 0u64;
@@ -332,39 +301,25 @@ pub async fn patch_tus(
             // Check if database operations failed
             if let Err(db_error) = db_result {
                 let _ = tx.rollback().await;
-                return Err((
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    axum::Json(json!({"error": db_error})),
-                ));
+                return Err(internal_error("Failed to insert features", &db_error));
             }
 
             // Wait for the GDAL processing to complete and handle any errors
             let gdal_result = gdal_handle.await;
             if let Err(join_error) = gdal_result {
                 let _ = tx.rollback().await;
-                return Err((
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    axum::Json(
-                        json!({"error": format!("GDAL processing task failed: {}", join_error)}),
-                    ),
-                ));
+                return Err(internal_error("GDAL processing task failed", &join_error));
             }
 
             if let Err(gdal_error) = gdal_result.unwrap() {
                 let _ = tx.rollback().await;
-                return Err((
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    axum::Json(json!({"error": gdal_error})),
-                ));
+                return Err(internal_error("GDAL processing failed", &gdal_error));
             }
 
             // Commit the transaction
-            tx.commit().await.map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    axum::Json(json!({"error": format!("Failed to commit transaction: {}", e)})),
-                )
-            })?;
+            tx.commit()
+                .await
+                .map_err(|e| internal_error("Failed to commit transaction", e))?;
 
             println!(
                 "Successfully inserted {} features for layer {}",
@@ -395,42 +350,32 @@ pub async fn patch_tus(
         };
 
         // Create a transaction to delete the LayerUpload record and save the Layer record
-        let mut tx = state.app_db.begin().await.map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                axum::Json(json!({"error": format!("Failed to start transaction: {}", e)})),
-            )
-        })?;
+        let mut tx = state
+            .app_db
+            .begin()
+            .await
+            .map_err(|e| internal_error("Failed to start transaction", e))?;
 
         // Delete LayerUpload record
-        layer_upload.delete(&mut *tx).await.map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                axum::Json(
-                    json!({"error": format!("Failed to delete layer upload record: {}", e)}),
-                ),
-            )
-        })?;
+        layer_upload
+            .delete(&mut *tx)
+            .await
+            .map_err(|e| internal_error("Failed to delete layer upload record", e))?;
 
         // Save Layer record
-        layer.save(&mut *tx).await.map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                axum::Json(json!({"error": format!("Failed to save layer record: {}", e)})),
-            )
-        })?;
+        layer
+            .save(&mut *tx)
+            .await
+            .map_err(|e| internal_error("Failed to save layer record", e))?;
         info!(
             "Layer upload {} completed and layer {} created",
             layer_upload.id, layer.id
         );
 
         // Commit the transaction
-        tx.commit().await.map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                axum::Json(json!({"error": format!("Failed to commit transaction: {}", e  )})),
-            )
-        })?;
+        tx.commit()
+            .await
+            .map_err(|e| internal_error("Failed to commit transaction", e))?;
 
         // Prepare response headers for completed upload
         let mut response_headers = HeaderMap::new();
@@ -450,12 +395,10 @@ pub async fn patch_tus(
 
     // If not complete, update the LayerUpload record
     // Always update layer status in the app database (to persist offset changes)
-    layer_upload.save(&*state.app_db).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            axum::Json(json!({"error": format!("Failed to update layer: {}", e)})),
-        )
-    })?;
+    layer_upload
+        .save(&*state.app_db)
+        .await
+        .map_err(|e| internal_error("Failed to update layer", e))?;
 
     // Prepare response headers
     let mut response_headers = HeaderMap::new();

@@ -1,4 +1,5 @@
 use crate::config::AppState;
+use crate::error::{internal_error, not_found_error};
 use axum::{
     extract::{Path as RequestPath, State},
     http::{HeaderMap, StatusCode, header::HeaderValue},
@@ -19,12 +20,7 @@ pub async fn get_tile(
     // TODO: Cache layer in memory to avoid repeated DB lookups for each tile request
     let layer = crate::layer::Layer::get(layer_id, &*state.app_db)
         .await
-        .map_err(|e| {
-            (
-                StatusCode::NOT_FOUND,
-                axum::Json(json!({"error": format!("Layer not found: {}", e)})),
-            )
-        })?;
+        .map_err(|e| not_found_error("Layer not found", e))?;
 
     // Check if zoom level is within the layer's supported range
     if let Some(min_zoom) = layer.min_zoom {
@@ -82,12 +78,7 @@ pub async fn get_tile(
     let tile_data = postgis_connector
         .get_tile(&tile_layer_config, z, x, y)
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                axum::Json(json!({"error": format!("Failed to get tile: {}", e)})),
-            )
-        })?;
+        .map_err(|e| internal_error("Failed to get tile", e))?;
     debug!("Tile data length: {}", tile_data.len());
 
     // Check if tile is empty

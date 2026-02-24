@@ -1,4 +1,5 @@
 use crate::config::AppState;
+use crate::error::internal_error;
 use axum::{
     extract::{Path as RequestPath, State},
     http::{HeaderMap, StatusCode, header::HeaderValue},
@@ -44,12 +45,7 @@ pub async fn get_osm_tile(
         &*state.app_db,
     )
     .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            axum::Json(json!({"error": format!("Failed to list OSM layers: {}", e)})),
-        )
-    })?;
+    .map_err(|e| internal_error("Failed to list OSM layers", e))?;
 
     // Build tile layer configs from OSM layers that match the zoom level
     let tile_layer_config: Vec<gridwalk_core::TileLayerConfig> = layers
@@ -81,12 +77,7 @@ pub async fn get_osm_tile(
     let tile_data = postgis_connector
         .get_tile(&tile_layer_config, z, x, y)
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                axum::Json(json!({"error": format!("Failed to get tile: {}", e)})),
-            )
-        })?;
+        .map_err(|e| internal_error("Failed to get tile", e))?;
     let layer_names: Vec<&str> = tile_layer_config
         .iter()
         .map(|c| c.layer_name.as_str())

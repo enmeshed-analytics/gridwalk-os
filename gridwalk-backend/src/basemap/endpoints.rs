@@ -1,11 +1,11 @@
 use crate::config::AppState;
+use crate::error::internal_error;
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use base64::{Engine as _, engine::general_purpose};
 use reqwest;
 use serde_json::json;
 use std::env;
 use std::sync::Arc;
-use tracing::error;
 
 #[derive(serde::Deserialize)]
 pub struct OSCredentials {
@@ -32,12 +32,7 @@ pub async fn set_os_credentials(
         &payload.api_secret,
     )
     .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            axum::Json(json!({"error": format!("Failed to save OS credentials: {}", e)})),
-        )
-    })?;
+    .map_err(|e| internal_error("Failed to save OS credentials", e))?;
 
     Ok(axum::Json(
         json!({"message": "OS credentials set successfully"}),
@@ -59,15 +54,7 @@ pub async fn get_os_token(
         &encryption_key,
     )
     .await
-    .map_err(|e| {
-        error!("Error retrieving OS credentials: {}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            axum::Json(
-                json!({"error": format!("Failed to get OS credentials: OS not configured")}),
-            ),
-        )
-    })?;
+    .map_err(|e| internal_error("Failed to get OS credentials", e))?;
 
     // Create Basic Auth header
     let credentials = format!("{}:{}", os_api_key, os_api_secret);
@@ -83,28 +70,19 @@ pub async fn get_os_token(
         .body("grant_type=client_credentials")
         .send()
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                axum::Json(json!({"error": format!("Failed to request token: {}", e)})),
-            )
-        })?;
+        .map_err(|e| internal_error("Failed to request token", e))?;
 
     if !response.status().is_success() {
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            axum::Json(
-                json!({"error": format!("Token request failed with status: {}", response.status())}),
-            ),
+        return Err(internal_error(
+            "Token request failed",
+            response.status(),
         ));
     }
 
-    let token_data: serde_json::Value = response.json().await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            axum::Json(json!({"error": format!("Failed to parse token response: {}", e)})),
-        )
-    })?;
+    let token_data: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| internal_error("Failed to parse token response", e))?;
 
     Ok(axum::Json(token_data))
 }

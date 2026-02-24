@@ -1,4 +1,5 @@
 use crate::config::AppState;
+use crate::error::internal_error;
 use crate::layer::{Layer, LayerUpload, LayerUploadStatus};
 use axum::{
     extract::State,
@@ -170,12 +171,10 @@ pub async fn post_tus(
     const MAX_RETRIES: usize = 5;
 
     while retry_count < MAX_RETRIES {
-        if !Layer::exists(layer_id, &*state.app_db).await.map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                axum::Json(json!({"error": format!("Failed to check layer existence: {}", e)})),
-            )
-        })? {
+        if !Layer::exists(layer_id, &*state.app_db)
+            .await
+            .map_err(|e| internal_error("Failed to check layer existence", e))?
+        {
             break;
         }
 
@@ -206,20 +205,15 @@ pub async fn post_tus(
     // Create empty file for TUS upload
     let upload_file_path = state.temp_data_path.join(layer_upload.id.to_string());
     println!("Creating upload file at {:?}", upload_file_path);
-    fs::File::create(&upload_file_path).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            axum::Json(json!({"error": format!("Failed to create upload file: {}", e)})),
-        )
-    })?;
+    fs::File::create(&upload_file_path)
+        .await
+        .map_err(|e| internal_error("Failed to create upload file", e))?;
 
     println!("Saving layer upload record to database: {:?}", layer_upload);
-    layer_upload.save(&*state.app_db).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            axum::Json(json!({"error": format!("Failed to save layer: {}", e)})),
-        )
-    })?;
+    layer_upload
+        .save(&*state.app_db)
+        .await
+        .map_err(|e| internal_error("Failed to save layer", e))?;
 
     let mut response_headers = HeaderMap::new();
     response_headers.insert("tus-resumable", HeaderValue::from_static("1.0.0"));

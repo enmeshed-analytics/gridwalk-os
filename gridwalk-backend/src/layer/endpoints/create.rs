@@ -1,4 +1,5 @@
 use crate::config::AppState;
+use crate::error::internal_error;
 use crate::layer::Layer;
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use gridwalk_core::LayerCore;
@@ -45,12 +46,10 @@ pub async fn create(
     };
 
     // Save new layer to database
-    new_layer.save(&*state.app_db).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            axum::Json(json!({"error": format!("Failed to create layer: {}", e)})),
-        )
-    })?;
+    new_layer
+        .save(&*state.app_db)
+        .await
+        .map_err(|e| internal_error("Failed to create layer", e))?;
 
     // Return ok response for testing
     Ok(axum::Json(

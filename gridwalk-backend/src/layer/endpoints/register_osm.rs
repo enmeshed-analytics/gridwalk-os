@@ -1,4 +1,5 @@
 use crate::config::AppState;
+use crate::error::internal_error;
 use crate::layer::{Layer, LayerStatus};
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use gridwalk_core::LayerCore;
@@ -184,12 +185,7 @@ pub async fn register_osm(
                 .await
         }
     }
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            axum::Json(json!({"error": format!("Failed to query schema tables: {}", e)})),
-        )
-    })?;
+    .map_err(|e| internal_error("Failed to query schema tables", e))?;
 
     if tables.is_empty() {
         return Err((
@@ -279,12 +275,10 @@ pub async fn register_osm(
 
     // Persist layers to the database
     for layer in &layers {
-        layer.save(&*state.app_db).await.map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                axum::Json(json!({"error": format!("Failed to save layer: {}", e)})),
-            )
-        })?;
+        layer
+            .save(&*state.app_db)
+            .await
+            .map_err(|e| internal_error("Failed to save layer", e))?;
     }
 
     Ok(axum::Json(json!({

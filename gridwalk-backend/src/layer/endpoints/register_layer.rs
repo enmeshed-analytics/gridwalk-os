@@ -1,4 +1,5 @@
 use crate::config::AppState;
+use crate::error::internal_error;
 use crate::layer::{Layer, LayerStatus};
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use gridwalk_core::LayerCore;
@@ -29,12 +30,10 @@ pub async fn register_layer(
     const MAX_RETRIES: usize = 5;
 
     while retry_count < MAX_RETRIES {
-        if !Layer::exists(layer_id, &*state.app_db).await.map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                axum::Json(json!({"error": format!("Failed to check layer existence: {}", e)})),
-            )
-        })? {
+        if !Layer::exists(layer_id, &*state.app_db)
+            .await
+            .map_err(|e| internal_error("Failed to check layer existence", e))?
+        {
             break;
         }
 
@@ -69,12 +68,10 @@ pub async fn register_layer(
     };
 
     // Save new layer to database
-    new_layer.save(&*state.app_db).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            axum::Json(json!({"error": format!("Failed to register layer: {}", e)})),
-        )
-    })?;
+    new_layer
+        .save(&*state.app_db)
+        .await
+        .map_err(|e| internal_error("Failed to register layer", e))?;
 
     Ok(axum::Json(json!({
         "message": "Layer registered successfully",

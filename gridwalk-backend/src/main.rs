@@ -1,5 +1,6 @@
 mod basemap;
 mod config;
+mod error;
 mod layer;
 
 use anyhow::Result;

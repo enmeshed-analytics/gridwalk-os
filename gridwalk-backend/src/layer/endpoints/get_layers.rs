@@ -1,4 +1,5 @@
 use crate::config::AppState;
+use crate::error::internal_error;
 use crate::layer::Layer;
 use axum::{
     extract::{Query, State},
@@ -7,7 +8,6 @@ use axum::{
 };
 use gridwalk_core::LayerCore;
 use serde::Deserialize;
-use serde_json::json;
 use std::sync::Arc;
 
 #[derive(Debug, Deserialize)]
@@ -40,12 +40,7 @@ pub async fn get_layers(
         &*state.app_db,
     )
     .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            axum::Json(json!({"error": format!("Failed to fetch layers: {}", e)})),
-        )
-    })?;
+    .map_err(|e| internal_error("Failed to fetch layers", e))?;
 
     Ok(axum::Json(layers))
 }
